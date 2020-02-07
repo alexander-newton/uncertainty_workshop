@@ -1,0 +1,148 @@
+---
+title: "Introduction to Uncertainty"
+author: "Callum Clark"
+date: "04/02/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Install packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+
+pacman::p_load(tidyverse)
+pacman::p_load(readxl)
+library(magrittr)
+
+```
+
+## Estimating height
+```{r}
+
+samples <- c()
+
+mx <- mean(samples)
+stdev <- sd(samples)
+hist(samples)
+abline(v = mx, col = "blue", lwd = 2)
+abline(v = mx+stdev, col = "red", lwd = 2)
+abline(v = mx-stdev, col = "red", lwd = 2)
+```
+
+
+## R combining uncertainties exercise
+
+```{r}
+dir <- "C:/Users/callum.clark/Desktop/R uncertainty seminar"
+
+
+data <- readxl::read_excel(paste0(dir,"/Defra_recycling_data_exercise2.xlsx"), sheet = "Black_bag_waste") 
+
+```
+
+What is the 95% sampling error for food waste, garden waste, other organic and paper respectively?
+
+```{r}
+
+data$se[data$primary_level_category == "Food waste"] <- 0.43
+
+data$se[data$primary_level_category == "Garden waste"] <- 0.00998
+
+data$se[data$primary_level_category == "Other organic"] <- 0.06
+
+data$se[data$primary_level_category == "Paper"] <- 0.75
+```
+
+
+## Expert judgement
+
+```{r}
+
+london_latitude <- 55.4
+london_homicides_2019 <- 149 
+uk_pop_2019 <- 66.9
+UK_waste_generated <- 223
+coronavirus_cases <- 
+
+guesses <- list(alex = c(1,1,1,0,0), callum = c(0,0,0,0,0))
+confidences <- list(alex = c(0.9,0.6,0.7,0.5,0.5), callum = c(0.9,0.9,1,0.9,0.9))
+
+calculate_brier_score <- function(guess,confidence) {
+    stopifnot(length(guess) == length(confidence))
+    brier_score = 1/length(guess) * purrr::map2(guess,confidence, function(x,y)  (y - x)^2) %>%
+	        purrr::reduce(`+`)
+			
+	return(brier_score)
+	
+}
+
+calculate_brier_scores <- function(guesses,confidences) {
+
+	brier_scores = purrr::map2(guesses, confidences, function(x,y) calculate_brier_score(x,y))
+	
+	return(brier_scores)
+}
+
+brier_scores <- calculate_brier_scores(guesses, confidences)
+barplot(unlist(brier_scores))
+```
+```{r}
+calculate_brier_score(guesses[["callum"]],confidences[["callum"]])
+guesses[1]
+```
+
+
+## Monte-carlo exercise 
+
+Exercise 1: generate inputs
+
+```{r}
+
+generate_impacts <- function(data) {
+              data %>% 
+               dplyr::mutate(generated_percentage_of_waste = rnorm(n(), mean = `percentage_of_total_household_residual_waste`, sd = `se`),
+			             policy_A_impact = runif(n(), min = `Policy_A_tonnage_reduction_lower`, max =`Policy_A_tonnage_reduction_upper`),
+			             policy_B_impact = runif(n(), min = `Policy_B_tonnage_reduction_lower`, max =`Policy_B_tonnage_reduction_upper`),  
+                         policy_C_impact = runif(n(), min = `Policy_C_tonnage_reduction_lower`, max =`Policy_C_tonnage_reduction_upper`),
+						 A_impact_tonnes = policy_A_impact * generated_percentage_of_waste * uk_total_household_residual_waste,
+						 B_impact_tonnes = policy_B_impact * generated_percentage_of_waste * uk_total_household_residual_waste,
+						 C_impact_tonnes = policy_C_impact * generated_percentage_of_waste * uk_total_household_residual_waste) %>%   
+			   dplyr::select(primary_level_category, A_impact_tonnes, B_impact_tonnes, C_impact_tonnes)
+}
+  
+
+run_monte_carlo <- function(n, data) {
+    lst <- 1:n
+    dfs <- purrr::map(lst, function(x) generate_impacts(data))
+	
+	return(dfs)
+}
+
+runs <- run_monte_carlo(10000, data)
+food_waste_runs <- purrr::map(runs, function(x) dplyr::filter(x, primary_level_category == "Food waste") %>% dplyr::select(A_impact_tonnes, B_impact_tonnes, C_impact_tonnes))
+food_waste <- dplyr::bind_rows(food_waste_runs) 
+rownames(food_waste) <- 1:nrow(food_waste)
+
+
+```
+
+Exercise 2: 
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+## Structured group expert judgment
+
+
